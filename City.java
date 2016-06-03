@@ -25,6 +25,10 @@ public class City {
         locId = id;
     }
 
+    public String toTSV() {
+        return name + "\t" + region + "\t" + country +"\n";
+    }
+
     public City(){}
 
     ArrayList<String> altNames = new ArrayList<String>();
