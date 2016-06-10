@@ -25,8 +25,12 @@ public class City {
         locId = id;
     }
 
+    public String toCSV() {
+        return country+ "," + region + "," + lat + "," + lon +"\n";
+    }
+
     public String toTSV() {
-        return name + "\t" + region + "\t" + country +"\n";
+        return name+ "\t" + region + "\t"+  country+  "\n";
     }
 
     public City(){}

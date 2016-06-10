@@ -1,9 +1,10 @@
 package me.bzifkin;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.nio.file.DirectoryIteratorException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import com.linkedin.paldb.api.PalDB;
 import com.linkedin.paldb.api.StoreWriter;
@@ -15,7 +16,8 @@ public class Main {
     public static HashMap<String, ArrayList<City>> cities = new HashMap<>(); //read in br2, key is name of the city, value is list of all cites w/ that name
     public static HashMap<String, HashMap<String, String>> regionLookUp = new HashMap<>(); //read in br3, key to outer map is country name, key to inner map is region code, value is region name
     public static HashMap<String, String> stateLookUp = new HashMap<>(); //read in br4, key is state abbreviation (e.g. IL, MA, etc) value is state name
-
+    public static ArrayList<String> allRegions = new ArrayList<>();
+    public static ArrayList<BookStatistics> books = new ArrayList<>();
     public static void sortCitiesByPop() {
 
         cities.forEach((k, v) -> {
@@ -97,6 +99,93 @@ public class Main {
         return true;
     }
 
+    public static void findUniqueLocations(String dir) throws IOException {
+        final File folder = new File(dir);
+        for (final File fileEntry : folder.listFiles()) {
+
+            String bookId = String.valueOf(fileEntry).split("/")[7];
+            ArrayList<String> regions = new ArrayList<String>();
+            StringBuilder sb = new StringBuilder();
+            sb.append(bookId + " :\n");
+            BookStatistics bs = new BookStatistics(bookId);
+            final int[] countryMentions = {0};
+            final int[] regionMentions = {0};
+            final int[] cityMentions = {0};
+            final int[] almostUniqLocs = {0};
+            final int[] numRegions = {0};
+            //if(fileEntry.isDirectory()) continue;
+            try (BufferedReader br =
+                         new BufferedReader(new InputStreamReader(new FileInputStream(fileEntry)))) {
+                br.lines().forEach(line -> {
+                    if(line!=null ) {
+                        String location = line.split("\\t")[0];
+                        if (countryLookUp.containsValue(location)){
+                            System.out.println("added to countries: " +line);
+                            bs.countries.add(line);
+                        }
+
+
+                       else if (allRegions.contains(location) || stateLookUp.containsValue(location)){
+                            regions.add(line);
+                            System.out.println("added to state: " +line);
+                            bs.states.add(line);
+                            numRegions[0]++;
+                        }
+
+                       else if(cities.get(location)!=null ){
+                                //legitLocs[0]++;
+//                            if(cities.get(line).size() == 1) {
+//                                //uniqLocs[0]++;
+//                                City city = cities.get(line).get(0);
+//                                sb.append("Unique- " + city.toTSV());
+//                            }
+//                            else if (cities.get(line).size()==2){
+//                                almostUniqLocs[0]++;
+//
+//                            }
+                            System.out.println("added to cities: " +line);
+                            bs.cities.add(line);
+
+                        }
+                    }
+                });
+
+            }
+
+            bs.sortLists();
+            books.add(bs);
+            //System.out.println(sb.toString());
+
+        }
+    }
+
+    private static double distance(double lat1, double lon1, double lat2, double lon2, String unit) {
+        double theta = lon1 - lon2;
+        double dist = Math.sin(deg2rad(lat1)) * Math.sin(deg2rad(lat2)) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.cos(deg2rad(theta));
+        dist = Math.acos(dist);
+        dist = rad2deg(dist);
+        dist = dist * 60 * 1.1515;
+        if (unit == "K") {
+            dist = dist * 1.609344;
+        } else if (unit == "N") {
+            dist = dist * 0.8684;
+        }
+
+        return (dist);
+    }
+
+//	This function converts decimal degrees to radians
+
+    private static double deg2rad(double deg) {
+        return (deg * Math.PI / 180.0);
+    }
+
+	//	This function converts radians to decimal degrees
+
+    private static double rad2deg(double rad) {
+        return (rad * 180 / Math.PI);
+    }
+
     public static void main(String[] args) throws IOException {
 
         final long startTime = System.currentTimeMillis();
@@ -108,6 +197,8 @@ public class Main {
                 if (tokens.length < 2) return;
                 countryLookUp.put(tokens[1].toLowerCase(), tokens[0].toLowerCase()); //put ISO code as key, country name as value.
             });
+            countryLookUp.put("gbb", "great britain");
+            countryLookUp.put("hey", "hayti");
         }
 
         //Keep track of previous country name and the counter to create a unique location ID for lookup/reference table
@@ -152,6 +243,8 @@ public class Main {
         }
         final String[] cntryCode = {""};
         final String[] cntryName = {""};
+
+
         try (BufferedReader br3 =
                      new BufferedReader(new InputStreamReader(Main.class.getResourceAsStream("/GEOPOLITICAL_CODES.csv")))) {
             br3.lines().forEach(line3 -> {
@@ -169,7 +262,11 @@ public class Main {
 
                 else{
                     String code = tokens[0].replace(cntryCode[0],"");
-                    regionLookUp.get(cntryName[0]).put(code, tokens[1]);
+                    String region = tokens[1].split("\\[")[0].toLowerCase().trim();
+                    allRegions.add(region);
+                    allRegions.add("guadaloupe");
+                    allRegions.add("hispaniola");
+                    regionLookUp.get(cntryName[0]).put(code, region);
                 }
 
             });
@@ -180,33 +277,43 @@ public class Main {
             br4.lines().forEach(line4 -> {
 
                 String[] tokens = line4.split(",");
-                stateLookUp.put(tokens[0], tokens[1]);
+                stateLookUp.put(tokens[0], tokens[1].toLowerCase());
             });
         }
 
-        sortCitiesByPop();
+        System.out.println(countryLookUp.containsValue("grenada"));
+
+        //sortCitiesByPop();
         assignStates();
         assignRegions();
+        findUniqueLocations("/home/bzifkin/IdeaProjects/lemur-galago/location-files/indices/");
+
+        StringBuilder sb = new StringBuilder();
+        for(BookStatistics bs: books){
+            sb.append(bs.toString() + "\n");
+        }
+
+        System.out.println(sb.toString());
 
 //        StringBuilder sb = new StringBuilder();
-//        for(City city : cities.get("riverside")){
+//        for(City city : cities.get("london")){
 //            sb.append("LocID: "+ city.locId+ " City Name: " + city.name + " Country Name: " + city.country+ " Region: " + city.region + " Pop: " +city.pop + " Lat: " + city.lat + " Long: " + city.lon + "\n");
 //        }
 //        System.out.println(sb.toString());
 
-        StoreWriter writer = PalDB.createWriter(new File("/home/bzifkin/IdeaProjects/lemur-galago/cities.paldb"));
-        for(Map.Entry<String, ArrayList<City>> city : cities.entrySet())
-        {
-            ArrayList<City> cityList = city.getValue();
-            String[] newCityList = new String[cityList.size()];
-            cityList.forEach(tempCity->{
-                newCityList[cityList.indexOf(tempCity)] = tempCity.toTSV();
-            });
-
-            writer.put(city.getKey(), newCityList);
-
-        }
-        writer.close();
+//        StoreWriter writer = PalDB.createWriter(new File("/home/bzifkin/IdeaProjects/lemur-galago/cities.paldb"));
+//        for(Map.Entry<String, ArrayList<City>> city : cities.entrySet())
+//        {
+//            ArrayList<City> cityList = city.getValue();
+//            String[] newCityList = new String[cityList.size()];
+//            cityList.forEach(tempCity->{
+//                newCityList[cityList.indexOf(tempCity)] = tempCity.toCSV();
+//            });
+//
+//            writer.put(city.getKey(), newCityList);
+//
+//        }
+//        writer.close();
         final long endTime = System.currentTimeMillis();
         System.out.println("Total execution time: " + (endTime - startTime) );
 
